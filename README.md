@@ -11,6 +11,29 @@ It is designed for Apple Silicon macOS and maps repository status to Finder labe
 
 Directories that are not git repository roots are ignored and their Finder tags are not changed.
 
+## Installation
+
+Install from the Homebrew tap:
+
+```sh
+brew tap rioriost/cask
+brew install --cask git-labeler
+```
+
+Configure at least one parent directory:
+
+```sh
+git-labeler config add ~/Git_Managed
+```
+
+Start the LaunchAgent:
+
+```sh
+/opt/homebrew/share/git-labeler/scripts/install-launchagent.sh
+```
+
+The package installs an Apple Silicon binary under `/opt/homebrew/bin/git-labeler`.
+
 ## Usage
 
 ```sh
