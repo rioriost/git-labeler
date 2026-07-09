@@ -106,8 +106,8 @@ Build a signed package:
 
 ```sh
 make package-macos-signed \
-  CODESIGN_IDENTITY="Developer ID Application: Ryo Fujita (23889H77KX)" \
-  PKG_SIGN_IDENTITY="Developer ID Installer: Ryo Fujita (23889H77KX)"
+  CODESIGN_IDENTITY="Developer ID Application: YOUR NAME (TEAMID)" \
+  PKG_SIGN_IDENTITY="Developer ID Installer: YOUR NAME (TEAMID)"
 ```
 
 Notarize and staple it:
