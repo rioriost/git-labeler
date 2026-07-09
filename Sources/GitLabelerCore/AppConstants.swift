@@ -1,7 +1,7 @@
 import Foundation
 
 public enum AppConstants {
-    public static let version = "0.1.0"
+    public static let version = "0.1.1"
     public static let bundleIdentifier = "st.rio.git-labeler"
     public static let plistFileName = "st.rio.git-labeler.plist"
     public static let defaultDebounceMilliseconds = 750

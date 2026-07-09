@@ -42,6 +42,19 @@ The package installs an Apple Silicon binary under `/opt/homebrew/bin/git-labele
 git-labeler config add ~/Git_Managed
 git-labeler config list
 git-labeler scan
+git-labeler config remove ~/Git_Managed --clear-labels
+```
+
+Remove a configured parent directory while keeping existing Finder tags:
+
+```sh
+git-labeler config remove ~/Git_Managed
+```
+
+Remove a configured parent directory and clear labels previously managed by `git-labeler` from git repositories directly under that directory:
+
+```sh
+git-labeler config remove ~/Git_Managed --clear-labels
 ```
 
 Check the LaunchAgent status:
@@ -121,7 +134,7 @@ make notarize-macos NOTARY_PROFILE=git-labeler-notary
 The cask artifact is:
 
 ```text
-target/package/macos/git-labeler-0.1.0-darwin-arm64.pkg
+target/package/macos/git-labeler-0.1.1-darwin-arm64.pkg
 ```
 
 Update `Casks/git-labeler.rb` with the SHA-256 written to `target/package/macos/SHA256SUMS.cask`.

@@ -62,8 +62,31 @@ struct GitLabelerCLI {
                 print(root)
             }
         case "remove", "rm":
-            guard arguments.count == 2 else { throw CLIError.invalidArguments("usage: git-labeler config remove PATH") }
+            guard arguments.count == 2 || arguments.count == 3 else {
+                throw CLIError.invalidArguments("usage: git-labeler config remove PATH [--clear-labels]")
+            }
+            let clearLabels = arguments.count == 3
+            if clearLabels && arguments[2] != "--clear-labels" {
+                throw CLIError.invalidArguments("usage: git-labeler config remove PATH [--clear-labels]")
+            }
+
+            let configBeforeRemoval = try store.load()
+            let removedRoot = clearLabels
+                ? try ConfigStore.normalizedDirectoryPath(arguments[1])
+                : ConfigStore.normalizedPath(arguments[1])
+            let wasConfigured = configBeforeRemoval.roots.contains(removedRoot)
+            let scanner = clearLabels && wasConfigured ? try RepoScanner(config: configBeforeRemoval) : nil
             let config = try store.removeRoot(arguments[1])
+
+            if clearLabels {
+                let results = scanner?.clearRoot(URL(fileURLWithPath: removedRoot, isDirectory: true)) ?? []
+                let clearedCount = results.filter(\.cleared).count
+                print("Cleared managed labels from \(clearedCount) repositories under \(removedRoot).")
+                for result in results where result.errorDescription != nil {
+                    print("error\t\(result.repositoryURL.path)\t\(result.errorDescription ?? "")")
+                }
+            }
+
             print("Removed root if present. Configured roots:")
             for root in config.roots {
                 print(root)
@@ -115,7 +138,7 @@ struct GitLabelerCLI {
               git-labeler scan
               git-labeler config list
               git-labeler config add PATH
-              git-labeler config remove PATH
+              git-labeler config remove PATH [--clear-labels]
               git-labeler config path
               git-labeler --version
             """
@@ -128,7 +151,7 @@ struct GitLabelerCLI {
             Usage:
               git-labeler config list
               git-labeler config add PATH
-              git-labeler config remove PATH
+              git-labeler config remove PATH [--clear-labels]
               git-labeler config path
             """
         )

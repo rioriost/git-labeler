@@ -12,6 +12,18 @@ public struct ScanResult: Equatable {
     }
 }
 
+public struct ClearResult: Equatable {
+    public var repositoryURL: URL
+    public var cleared: Bool
+    public var errorDescription: String?
+
+    public init(repositoryURL: URL, cleared: Bool, errorDescription: String? = nil) {
+        self.repositoryURL = repositoryURL
+        self.cleared = cleared
+        self.errorDescription = errorDescription
+    }
+}
+
 public final class RepoScanner {
     private let gitStatusReader: GitStatusReader
     private let tagger: FinderTagApplying
@@ -59,6 +71,39 @@ public final class RepoScanner {
             return ScanResult(repositoryURL: repositoryURL, state: state)
         } catch {
             return ScanResult(repositoryURL: repositoryURL, state: nil, errorDescription: error.localizedDescription)
+        }
+    }
+
+    public func clearRoot(_ root: URL) -> [ClearResult] {
+        let options: FileManager.DirectoryEnumerationOptions = [
+            .skipsPackageDescendants
+        ]
+
+        guard let children = try? fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: options
+        ) else {
+            return [ClearResult(repositoryURL: root, cleared: false, errorDescription: "cannot read root")]
+        }
+
+        return children
+            .filter { url in
+                (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            }
+            .sorted { $0.path < $1.path }
+            .map { clearRepositoryCandidate($0) }
+    }
+
+    public func clearRepositoryCandidate(_ repositoryURL: URL) -> ClearResult {
+        do {
+            guard try gitStatusReader.state(forRepositoryRoot: repositoryURL) != nil else {
+                return ClearResult(repositoryURL: repositoryURL, cleared: false)
+            }
+            try tagger.clearManagedTags(from: repositoryURL, tagNames: tagNames)
+            return ClearResult(repositoryURL: repositoryURL, cleared: true)
+        } catch {
+            return ClearResult(repositoryURL: repositoryURL, cleared: false, errorDescription: error.localizedDescription)
         }
     }
 }

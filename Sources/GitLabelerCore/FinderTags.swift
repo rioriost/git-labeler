@@ -30,6 +30,7 @@ public struct FinderTag: Equatable {
 
 public protocol FinderTagApplying {
     func apply(state: RepositoryState, to url: URL, tagNames: GitLabelerConfig.TagNames) throws
+    func clearManagedTags(from url: URL, tagNames: GitLabelerConfig.TagNames) throws
 }
 
 public final class FinderTagger: FinderTagApplying {
@@ -39,12 +40,7 @@ public final class FinderTagger: FinderTagApplying {
 
     public func apply(state: RepositoryState, to url: URL, tagNames: GitLabelerConfig.TagNames) throws {
         var tags = try readTags(from: url)
-        let managedTagNames = AppConstants.managedTagNames.union([
-            tagNames.untracked,
-            tagNames.modified,
-            tagNames.deleted
-        ])
-        tags.removeAll { managedTagNames.contains($0.name) }
+        tags.removeAll { managedTagNames(for: tagNames).contains($0.name) }
 
         switch state {
         case .clean:
@@ -57,6 +53,12 @@ public final class FinderTagger: FinderTagApplying {
             tags.append(FinderTag(name: tagNames.deleted, color: 6))
         }
 
+        try writeTags(tags, to: url)
+    }
+
+    public func clearManagedTags(from url: URL, tagNames: GitLabelerConfig.TagNames) throws {
+        var tags = try readTags(from: url)
+        tags.removeAll { managedTagNames(for: tagNames).contains($0.name) }
         try writeTags(tags, to: url)
     }
 
@@ -97,5 +99,13 @@ public final class FinderTagger: FinderTagApplying {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
         }
+    }
+
+    private func managedTagNames(for tagNames: GitLabelerConfig.TagNames) -> Set<String> {
+        AppConstants.managedTagNames.union([
+            tagNames.untracked,
+            tagNames.modified,
+            tagNames.deleted
+        ])
     }
 }
