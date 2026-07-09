@@ -42,17 +42,20 @@ git-labeler config list
 git-labeler scan
 ```
 
-Run as a service:
+Check the LaunchAgent status:
 
 ```sh
-brew services start git-labeler
+/opt/homebrew/share/git-labeler/scripts/status-launchagent.sh
 ```
 
-If you need the LaunchAgent file to be exactly `st.rio.git-labeler.plist`, use the bundled script instead:
+Restart the LaunchAgent after changing configuration:
 
 ```sh
+/opt/homebrew/share/git-labeler/scripts/uninstall-launchagent.sh
 /opt/homebrew/share/git-labeler/scripts/install-launchagent.sh
 ```
+
+`git-labeler` is distributed as a notarized Homebrew Cask package, not as a Formula, so it is not managed by `brew services`.
 
 The config file is stored at:
 
