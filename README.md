@@ -11,6 +11,8 @@ It is designed for Apple Silicon macOS and maps repository status to Finder labe
 
 Directories that are not git repository roots are ignored and their Finder tags are not changed.
 
+![git-labeler screenshot](images/screenshot.webp)
+
 ## Installation
 
 Install from the Homebrew tap:
