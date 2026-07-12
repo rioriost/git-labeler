@@ -63,42 +63,88 @@ public final class FinderTagger: FinderTagApplying {
     }
 
     public func readTags(from url: URL) throws -> [FinderTag] {
-        let path = url.path
-        let size = getxattr(path, attributeName, nil, 0, 0, 0)
-
-        if size > 0 {
-            var data = Data(count: size)
-            let readSize = data.withUnsafeMutableBytes { buffer in
-                getxattr(path, attributeName, buffer.baseAddress, size, 0, 0)
-            }
-
-            if readSize > 0 {
-                data.count = readSize
-                if let values = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String] {
-                    return values.map(FinderTag.decode)
-                }
-            }
+        guard let data = try readTagData(from: url) else {
+            return []
         }
 
-        let values = try url.resourceValues(forKeys: [.tagNamesKey])
-        return (values.tagNames ?? []).map { FinderTag(name: $0) }
+        let propertyList = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        guard let values = propertyList as? [String] else {
+            return []
+        }
+        return values.map(FinderTag.decode)
     }
 
     private func writeTags(_ tags: [FinderTag], to url: URL) throws {
-        let path = url.path
-        guard !tags.isEmpty else {
-            removexattr(path, attributeName, 0)
-            return
-        }
+        try url.withUnsafeFileSystemRepresentation { path in
+            guard let path else {
+                throw POSIXError(.EINVAL)
+            }
 
-        let values = tags.map(\.encodedValue)
-        let data = try PropertyListSerialization.data(fromPropertyList: values, format: .binary, options: 0)
-        try data.withUnsafeBytes { buffer in
-            let result = setxattr(path, attributeName, buffer.baseAddress, data.count, 0, 0)
-            if result != 0 {
-                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            guard !tags.isEmpty else {
+                if removexattr(path, attributeName, 0) != 0,
+                   !isMissingAttributeOrFile(errno) {
+                    throw posixError(errno)
+                }
+                return
+            }
+
+            let values = tags.map(\.encodedValue)
+            let data = try PropertyListSerialization.data(fromPropertyList: values, format: .binary, options: 0)
+            try data.withUnsafeBytes { buffer in
+                if setxattr(path, attributeName, buffer.baseAddress, data.count, 0, 0) != 0,
+                   errno != ENOENT {
+                    throw posixError(errno)
+                }
             }
         }
+    }
+
+    private func readTagData(from url: URL) throws -> Data? {
+        try url.withUnsafeFileSystemRepresentation { path in
+            guard let path else {
+                throw POSIXError(.EINVAL)
+            }
+
+            // The attribute can change between the size query and the read.
+            for _ in 0..<3 {
+                let size = getxattr(path, attributeName, nil, 0, 0, 0)
+                if size < 0 {
+                    if isMissingAttributeOrFile(errno) {
+                        return nil
+                    }
+                    throw posixError(errno)
+                }
+                guard size > 0 else {
+                    return nil
+                }
+
+                var data = Data(count: size)
+                let readSize = data.withUnsafeMutableBytes { buffer in
+                    getxattr(path, attributeName, buffer.baseAddress, size, 0, 0)
+                }
+                if readSize >= 0 {
+                    data.count = readSize
+                    return data
+                }
+                if errno == ERANGE {
+                    continue
+                }
+                if isMissingAttributeOrFile(errno) {
+                    return nil
+                }
+                throw posixError(errno)
+            }
+
+            throw POSIXError(.EAGAIN)
+        }
+    }
+
+    private func isMissingAttributeOrFile(_ errorNumber: Int32) -> Bool {
+        errorNumber == ENOATTR || errorNumber == ENOENT
+    }
+
+    private func posixError(_ errorNumber: Int32) -> POSIXError {
+        POSIXError(POSIXErrorCode(rawValue: errorNumber) ?? .EIO)
     }
 
     private func managedTagNames(for tagNames: GitLabelerConfig.TagNames) -> Set<String> {
