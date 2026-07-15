@@ -50,6 +50,21 @@ final class FinderTagTests: XCTestCase {
         XCTAssertEqual(try tagger.readTags(from: directory), [])
     }
 
+    func testApplyingSameStateDoesNotRewriteAttribute() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? fileManager.removeItem(at: directory) }
+        let tagger = FinderTagger()
+        let tagNames = GitLabelerConfig.TagNames()
+
+        try tagger.apply(state: .modified, to: directory, tagNames: tagNames)
+        let changeTime = try statusChangeTime(for: directory)
+        usleep(10_000)
+
+        try tagger.apply(state: .modified, to: directory, tagNames: tagNames)
+
+        XCTAssertEqual(try statusChangeTime(for: directory), changeTime)
+    }
+
     func testMissingDirectoryIsIgnoredDuringApply() throws {
         let directory = fileManager.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -68,5 +83,13 @@ final class FinderTagTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: false)
         return directory
+    }
+
+    private func statusChangeTime(for url: URL) throws -> [Int] {
+        var status = stat()
+        guard lstat(url.path, &status) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        return [Int(status.st_ctimespec.tv_sec), Int(status.st_ctimespec.tv_nsec)]
     }
 }

@@ -39,7 +39,8 @@ public final class FinderTagger: FinderTagApplying {
     public init() {}
 
     public func apply(state: RepositoryState, to url: URL, tagNames: GitLabelerConfig.TagNames) throws {
-        var tags = try readTags(from: url)
+        let currentTags = try readTags(from: url)
+        var tags = currentTags
         tags.removeAll { managedTagNames(for: tagNames).contains($0.name) }
 
         switch state {
@@ -53,12 +54,19 @@ public final class FinderTagger: FinderTagApplying {
             tags.append(FinderTag(name: tagNames.deleted, color: 6))
         }
 
+        guard tags != currentTags else {
+            return
+        }
         try writeTags(tags, to: url)
     }
 
     public func clearManagedTags(from url: URL, tagNames: GitLabelerConfig.TagNames) throws {
-        var tags = try readTags(from: url)
+        let currentTags = try readTags(from: url)
+        var tags = currentTags
         tags.removeAll { managedTagNames(for: tagNames).contains($0.name) }
+        guard tags != currentTags else {
+            return
+        }
         try writeTags(tags, to: url)
     }
 

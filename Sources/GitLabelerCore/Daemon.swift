@@ -48,10 +48,22 @@ public final class GitLabelerDaemon {
 
     private func scanAll() {
         for root in roots {
-            Self.log("scanning \(root.path)")
-            for result in scanner.scanRoot(root) {
+            let results = scanner.scanRoot(root)
+            for result in results where result.errorDescription != nil {
                 Self.log(result)
             }
+
+            let states = results.compactMap(\.state)
+            let cleanCount = states.filter { $0 == .clean }.count
+            let untrackedCount = states.filter { $0 == .untracked }.count
+            let modifiedCount = states.filter { $0 == .modified }.count
+            let deletedCount = states.filter { $0 == .deleted }.count
+            let errorCount = results.filter { $0.errorDescription != nil }.count
+            Self.log(
+                "scanned \(root.path): \(states.count) repositories "
+                    + "(clean \(cleanCount), untracked \(untrackedCount), "
+                    + "modified \(modifiedCount), deleted \(deletedCount)), errors \(errorCount)"
+            )
         }
     }
 

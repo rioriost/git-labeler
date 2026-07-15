@@ -31,6 +31,8 @@ cat > "${plist_path}" <<EOF_PLIST
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
   <key>ProcessType</key>
   <string>Background</string>
   <key>StandardOutPath</key>

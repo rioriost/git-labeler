@@ -11,7 +11,7 @@ Usage:
 Builds a macOS arm64 .pkg for git-labeler.
 
 Options:
-  --version VERSION          Default: 0.1.2
+  --version VERSION          Default: 0.1.3
   --out-dir PATH             Default: target/package/macos
   --prefix PATH              Default: /opt/homebrew
   --skip-build               Use existing Swift build output
@@ -25,7 +25,7 @@ Environment alternatives:
 USAGE
 }
 
-version="0.1.2"
+version="0.1.3"
 out_dir="target/package/macos"
 prefix="/opt/homebrew"
 skip_build=0

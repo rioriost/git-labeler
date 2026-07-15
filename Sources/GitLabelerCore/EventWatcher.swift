@@ -33,10 +33,11 @@ public final class EventWatcher {
             let callback: FSEventStreamCallback = { _, info, count, pathsPointer, _, _ in
                 guard let info else { return }
                 let watcher = Unmanaged<EventWatcher>.fromOpaque(info).takeUnretainedValue()
-                let paths = unsafeBitCast(pathsPointer, to: CFArray.self) as! [String]
+                let eventPaths = unsafeBitCast(pathsPointer, to: CFArray.self)
+                guard let paths = eventPaths as? [String] else { return }
 
-                for index in 0..<count {
-                    watcher.handleEventPath(paths[index])
+                for path in paths.prefix(count) {
+                    watcher.handleEventPath(path)
                 }
             }
 
@@ -53,7 +54,11 @@ public final class EventWatcher {
             }
 
             FSEventStreamSetDispatchQueue(stream, queue)
-            FSEventStreamStart(stream)
+            guard FSEventStreamStart(stream) else {
+                FSEventStreamInvalidate(stream)
+                FSEventStreamRelease(stream)
+                continue
+            }
             streams.append(stream)
         }
     }

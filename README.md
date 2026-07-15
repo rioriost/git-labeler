@@ -134,7 +134,7 @@ make notarize-macos NOTARY_PROFILE=git-labeler-notary
 The cask artifact is:
 
 ```text
-target/package/macos/git-labeler-0.1.2-darwin-arm64.pkg
+target/package/macos/git-labeler-0.1.3-darwin-arm64.pkg
 ```
 
 Update `Casks/git-labeler.rb` with the SHA-256 written to `target/package/macos/SHA256SUMS.cask`.
