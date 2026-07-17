@@ -117,6 +117,7 @@ public struct GitStatusReader {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: gitPath)
         process.arguments = arguments
+        process.environment = Self.gitEnvironment()
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -137,6 +138,14 @@ public struct GitStatusReader {
         }
 
         return CommandResult(stdout: stdoutData)
+    }
+
+    static func gitEnvironment(
+        inheriting environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        var environment = environment
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
+        return environment
     }
 
     private static func ascii(_ scalar: UnicodeScalar) -> UInt8 {

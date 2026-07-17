@@ -1,4 +1,4 @@
-VERSION ?= 0.1.3
+VERSION ?= 0.1.4
 NOTARY_PROFILE ?= git-labeler-notary
 MACOS_SIGNED_PKG ?= target/package/macos/git-labeler-$(VERSION)-darwin-arm64-signed.pkg
 MACOS_FINAL_PKG ?= target/package/macos/git-labeler-$(VERSION)-darwin-arm64.pkg

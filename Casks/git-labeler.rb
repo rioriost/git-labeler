@@ -1,6 +1,6 @@
 cask "git-labeler" do
-  version "0.1.3"
-  sha256 "44541ca13c34418dce633ad72306953cc48dc416a2d8b5be05679f3c5204e09c"
+  version "0.1.4"
+  sha256 "5bcdd27083a4d57dea2332a0562fb82a12fa94d3be911248a3e070317d4ca3a8"
 
   url "https://github.com/rioriost/git-labeler/releases/download/v#{version}/git-labeler-#{version}-darwin-arm64.pkg"
   name "git-labeler"
