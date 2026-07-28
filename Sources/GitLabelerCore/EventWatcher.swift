@@ -91,8 +91,15 @@ public final class EventWatcher {
                 continue
             }
 
-            let relative = String(eventPath.dropFirst(rootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            guard let firstComponent = relative.split(separator: "/", maxSplits: 1).first else {
+            let relative = String(eventPath.dropFirst(rootPath.count))
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let components = relative.split(separator: "/")
+            guard let firstComponent = components.first else {
+                return nil
+            }
+            if components.count >= 3,
+               components[1] == ".git",
+               components[2] == "fsmonitor--daemon" {
                 return nil
             }
 
