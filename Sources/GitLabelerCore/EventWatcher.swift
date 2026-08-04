@@ -124,7 +124,7 @@ public final class RepositoryDebouncer {
     public func schedule(_ url: URL) {
         let key = url.standardizedFileURL.resolvingSymlinksInPath().path
 
-        queue.async {
+        queue.async { [self] in
             self.pending[key]?.cancel()
 
             let item = DispatchWorkItem { [weak self] in
