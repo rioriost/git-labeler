@@ -70,23 +70,32 @@ struct GitLabelerCLI {
                 throw CLIError.invalidArguments("usage: git-labeler config remove PATH [--clear-labels]")
             }
 
+            let serviceLock = clearLabels ? try ServiceLock() : nil
+            defer { withExtendedLifetime(serviceLock) {} }
             let configBeforeRemoval = try store.load()
             let removedRoot = clearLabels
                 ? try ConfigStore.normalizedDirectoryPath(arguments[1])
                 : ConfigStore.normalizedPath(arguments[1])
-            let wasConfigured = configBeforeRemoval.roots.contains(removedRoot)
+            let wasConfigured = configBeforeRemoval.roots.contains { ConfigStore.normalizedPath($0) == removedRoot }
             let scanner = clearLabels && wasConfigured ? try RepoScanner(config: configBeforeRemoval) : nil
-            let config = try store.removeRoot(arguments[1])
 
             if clearLabels {
                 let results = scanner?.clearRoot(URL(fileURLWithPath: removedRoot, isDirectory: true)) ?? []
                 let clearedCount = results.filter(\.cleared).count
                 print("Cleared managed labels from \(clearedCount) repositories under \(removedRoot).")
-                for result in results where result.errorDescription != nil {
-                    print("error\t\(result.repositoryURL.path)\t\(result.errorDescription ?? "")")
+                let errors = results.compactMap { result -> String? in
+                    guard let error = result.errorDescription else { return nil }
+                    return "error\t\(result.repositoryURL.path)\t\(error)"
+                }
+                for error in errors {
+                    FileHandle.standardError.write(Data("\(error)\n".utf8))
+                }
+                guard errors.isEmpty else {
+                    throw CLIError.operationFailed("label clearing failed; root remains configured, so the operation can be retried")
                 }
             }
 
+            let config = try store.removeRoot(arguments[1])
             print("Removed root if present. Configured roots:")
             for root in config.roots {
                 print(root)
@@ -105,19 +114,26 @@ struct GitLabelerCLI {
             return
         }
 
+        var failureCount = 0
         for root in config.roots {
             let rootURL = URL(fileURLWithPath: root, isDirectory: true)
             for result in scanner.scanRoot(rootURL) {
                 if let errorDescription = result.errorDescription {
-                    print("error\t\(result.repositoryURL.path)\t\(errorDescription)")
+                    FileHandle.standardError.write(Data("error\t\(result.repositoryURL.path)\t\(errorDescription)\n".utf8))
+                    failureCount += 1
                 } else if let state = result.state {
                     print("\(state.rawValue)\t\(result.repositoryURL.path)")
                 }
             }
         }
+        guard failureCount == 0 else {
+            throw CLIError.operationFailed("scan failed for \(failureCount) candidate(s)")
+        }
     }
 
     private static func runDaemon() throws {
+        let serviceLock = try ServiceLock()
+        defer { withExtendedLifetime(serviceLock) {} }
         let config = try ConfigStore().load()
         try GitLabelerDaemon(config: config).run()
     }
@@ -161,12 +177,13 @@ struct GitLabelerCLI {
 private enum CLIError: Error, LocalizedError {
     case unknownCommand(String)
     case invalidArguments(String)
+    case operationFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .unknownCommand(let command):
             return "unknown command: \(command)"
-        case .invalidArguments(let message):
+        case .invalidArguments(let message), .operationFailed(let message):
             return message
         }
     }

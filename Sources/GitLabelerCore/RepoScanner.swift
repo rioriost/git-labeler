@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct ScanResult: Equatable {
@@ -35,6 +36,7 @@ public final class RepoScanner {
         tagger: FinderTagApplying = FinderTagger(),
         fileManager: FileManager = .default
     ) throws {
+        try config.validate(fileManager: fileManager)
         self.gitStatusReader = try GitStatusReader(gitPath: config.gitPath)
         self.tagger = tagger
         self.fileManager = fileManager
@@ -64,6 +66,9 @@ public final class RepoScanner {
 
     public func scanRepositoryCandidate(_ repositoryURL: URL) -> ScanResult {
         do {
+            guard try isDirectoryCandidate(repositoryURL) else {
+                return ScanResult(repositoryURL: repositoryURL, state: nil)
+            }
             guard let state = try gitStatusReader.state(forRepositoryRoot: repositoryURL) else {
                 return ScanResult(repositoryURL: repositoryURL, state: nil)
             }
@@ -97,7 +102,10 @@ public final class RepoScanner {
 
     public func clearRepositoryCandidate(_ repositoryURL: URL) -> ClearResult {
         do {
-            guard try gitStatusReader.state(forRepositoryRoot: repositoryURL) != nil else {
+            guard try isDirectoryCandidate(repositoryURL) else {
+                return ClearResult(repositoryURL: repositoryURL, cleared: false)
+            }
+            guard try gitStatusReader.isRepositoryRoot(repositoryURL) else {
                 return ClearResult(repositoryURL: repositoryURL, cleared: false)
             }
             try tagger.clearManagedTags(from: repositoryURL, tagNames: tagNames)
@@ -105,5 +113,17 @@ public final class RepoScanner {
         } catch {
             return ClearResult(repositoryURL: repositoryURL, cleared: false, errorDescription: error.localizedDescription)
         }
+    }
+
+    private func isDirectoryCandidate(_ url: URL) throws -> Bool {
+        var metadata = stat()
+        if stat(url.path, &metadata) == 0 {
+            return metadata.st_mode & S_IFMT == S_IFDIR
+        }
+        let errorNumber = errno
+        if errorNumber == ENOENT || errorNumber == ENOTDIR {
+            return false
+        }
+        throw POSIXError(POSIXErrorCode(rawValue: errorNumber) ?? .EIO)
     }
 }

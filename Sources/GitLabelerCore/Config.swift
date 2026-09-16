@@ -39,6 +39,43 @@ public struct GitLabelerConfig: Codable, Equatable {
         self.gitPath = gitPath
         self.tags = tags
     }
+
+    public func validate(fileManager: FileManager = .default) throws {
+        guard version == 1 else {
+            throw GitLabelerError.invalidConfiguration("version", "only version 1 is supported")
+        }
+        guard (0...60_000).contains(debounceMilliseconds) else {
+            throw GitLabelerError.invalidConfiguration("debounceMilliseconds", "must be between 0 and 60000")
+        }
+        guard (1...86_400).contains(rescanIntervalSeconds) else {
+            throw GitLabelerError.invalidConfiguration("rescanIntervalSeconds", "must be between 1 and 86400")
+        }
+        for root in roots {
+            guard root.hasPrefix("/"), !root.contains("\0") else {
+                throw GitLabelerError.invalidConfiguration("roots", "paths must be absolute and contain no NUL characters")
+            }
+        }
+        if let gitPath {
+            var isDirectory: ObjCBool = false
+            guard gitPath.hasPrefix("/"),
+                  !gitPath.contains("\0"),
+                  fileManager.fileExists(atPath: gitPath, isDirectory: &isDirectory),
+                  !isDirectory.boolValue,
+                  fileManager.isExecutableFile(atPath: gitPath) else {
+                throw GitLabelerError.invalidConfiguration("gitPath", "must be null or an absolute path to an executable file")
+            }
+        }
+        let names = [tags.untracked, tags.modified, tags.deleted]
+        guard names.allSatisfy({
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && $0.rangeOfCharacter(from: .controlCharacters) == nil
+        }) else {
+            throw GitLabelerError.invalidConfiguration("tags", "names must be nonempty and contain no control characters")
+        }
+        guard Set(names).count == names.count else {
+            throw GitLabelerError.invalidConfiguration("tags", "names must be distinct")
+        }
+    }
 }
 
 public final class ConfigStore {
@@ -61,10 +98,13 @@ public final class ConfigStore {
         }
 
         let data = try Data(contentsOf: url)
-        return try decoder.decode(GitLabelerConfig.self, from: data)
+        let config = try decoder.decode(GitLabelerConfig.self, from: data)
+        try config.validate(fileManager: fileManager)
+        return config
     }
 
     public func save(_ config: GitLabelerConfig) throws {
+        try config.validate(fileManager: fileManager)
         let directory = url.deletingLastPathComponent()
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try encoder.encode(config)
@@ -120,6 +160,7 @@ public final class ConfigStore {
 
 public enum GitLabelerError: Error, LocalizedError, Equatable {
     case invalidDirectory(String)
+    case invalidConfiguration(String, String)
     case unsupportedArchitecture(String)
     case gitNotFound
     case commandFailed(command: String, status: Int32, stderr: String)
@@ -129,6 +170,8 @@ public enum GitLabelerError: Error, LocalizedError, Equatable {
         switch self {
         case .invalidDirectory(let path):
             return "not a directory: \(path)"
+        case .invalidConfiguration(let field, let reason):
+            return "invalid configuration '\(field)': \(reason)"
         case .unsupportedArchitecture(let architecture):
             return "git-labeler supports arm64 only; current architecture is \(architecture)"
         case .gitNotFound:

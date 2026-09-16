@@ -18,7 +18,8 @@ public final class EventWatcher {
         stop()
     }
 
-    public func start() {
+    public func start() throws {
+        stop()
         let context = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
 
         for root in roots {
@@ -50,14 +51,16 @@ public final class EventWatcher {
                 0.5,
                 FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents)
             ) else {
-                continue
+                stop()
+                throw EventWatcherError.cannotWatch(root)
             }
 
             FSEventStreamSetDispatchQueue(stream, queue)
             guard FSEventStreamStart(stream) else {
                 FSEventStreamInvalidate(stream)
                 FSEventStreamRelease(stream)
-                continue
+                stop()
+                throw EventWatcherError.cannotWatch(root)
             }
             streams.append(stream)
         }
@@ -75,49 +78,72 @@ public final class EventWatcher {
     private func handleEventPath(_ path: String) {
         let eventURL = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
 
-        guard let repositoryURL = repositoryCandidate(for: eventURL) else {
-            return
+        for repositoryURL in repositoryCandidates(for: eventURL) {
+            handler(repositoryURL)
         }
-
-        handler(repositoryURL)
     }
 
     public func repositoryCandidate(for eventURL: URL) -> URL? {
+        repositoryCandidates(for: eventURL).first
+    }
+
+    public func repositoryCandidates(for eventURL: URL) -> [URL] {
         let eventPath = eventURL.path
+        var candidates: [URL] = []
+        var seen: Set<String> = []
 
         for root in roots {
             let rootPath = root.path
-            guard eventPath == rootPath || eventPath.hasPrefix(rootPath + "/") else {
+            let prefix = rootPath == "/" ? "/" : rootPath + "/"
+            guard eventPath.hasPrefix(prefix) else {
                 continue
             }
 
-            let relative = String(eventPath.dropFirst(rootPath.count))
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let relative = String(eventPath.dropFirst(prefix.count))
             let components = relative.split(separator: "/")
             guard let firstComponent = components.first else {
-                return nil
+                continue
             }
             if components.count >= 3,
                components[1] == ".git",
                components[2] == "fsmonitor--daemon" {
-                return nil
+                continue
             }
 
-            return root.appendingPathComponent(String(firstComponent), isDirectory: true)
+            let candidate = root.appendingPathComponent(String(firstComponent), isDirectory: true)
+            if seen.insert(candidate.path).inserted {
+                candidates.append(candidate)
+            }
         }
 
-        return nil
+        return candidates
+    }
+}
+
+private enum EventWatcherError: Error, LocalizedError {
+    case cannotWatch(URL)
+
+    var errorDescription: String? {
+        switch self {
+        case .cannotWatch(let root):
+            return "cannot start filesystem monitoring for \(root.path)"
+        }
     }
 }
 
 public final class RepositoryDebouncer {
     private let delay: DispatchTimeInterval
-    private let queue = DispatchQueue(label: "st.rio.git-labeler.debounce")
+    private let queue: DispatchQueue
     private var pending: [String: DispatchWorkItem] = [:]
     private let handler: (URL) -> Void
 
-    public init(milliseconds: Int, handler: @escaping (URL) -> Void) {
+    public init(
+        milliseconds: Int,
+        queue: DispatchQueue = DispatchQueue(label: "st.rio.git-labeler.debounce"),
+        handler: @escaping (URL) -> Void
+    ) {
         self.delay = .milliseconds(max(milliseconds, 0))
+        self.queue = queue
         self.handler = handler
     }
 
@@ -129,9 +155,7 @@ public final class RepositoryDebouncer {
 
             let item = DispatchWorkItem { [weak self] in
                 guard let self else { return }
-                self.queue.async {
-                    self.pending[key] = nil
-                }
+                self.pending[key] = nil
                 self.handler(URL(fileURLWithPath: key, isDirectory: true))
             }
 

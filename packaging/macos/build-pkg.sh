@@ -11,7 +11,7 @@ Usage:
 Builds a macOS arm64 .pkg for git-labeler.
 
 Options:
-  --version VERSION          Default: 0.2.0
+  --version VERSION          Default: 0.2.1
   --out-dir PATH             Default: target/package/macos
   --prefix PATH              Default: /opt/homebrew
   --skip-build               Use existing Swift build output
@@ -25,24 +25,40 @@ Environment alternatives:
 USAGE
 }
 
-version="0.2.0"
+version="0.2.1"
 out_dir="target/package/macos"
 prefix="/opt/homebrew"
 skip_build=0
 codesign_identity="${CODESIGN_IDENTITY:-}"
 pkg_sign_identity="${PKG_SIGN_IDENTITY:-}"
 
+require_value() {
+  if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+    echo "Missing value for $1" >&2
+    exit 2
+  fi
+  case "$2" in
+    --*|-h)
+      echo "Missing value for $1" >&2
+      exit 2
+      ;;
+  esac
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --version)
+      require_value "$@"
       version="$2"
       shift 2
       ;;
     --out-dir)
+      require_value "$@"
       out_dir="$2"
       shift 2
       ;;
     --prefix)
+      require_value "$@"
       prefix="$2"
       shift 2
       ;;
@@ -51,10 +67,12 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     --sign-identity)
+      require_value "$@"
       codesign_identity="$2"
       shift 2
       ;;
     --pkg-sign-identity)
+      require_value "$@"
       pkg_sign_identity="$2"
       shift 2
       ;;
@@ -70,9 +88,22 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+case "$version" in
+  ''|[!0-9]*|*[!0-9A-Za-z.+_-]*)
+    echo "--version must start with a digit and contain only letters, digits, dots, plus signs, underscores, or hyphens" >&2
+    exit 2
+    ;;
+esac
+
 case "$prefix" in
   /*) ;;
   *) echo "--prefix must be absolute" >&2; exit 2 ;;
+esac
+case "$prefix/" in
+  */../*|*/./*)
+    echo "--prefix must not contain '.' or '..' path components" >&2
+    exit 2
+    ;;
 esac
 
 require_command() {
@@ -108,22 +139,40 @@ if [ ! -x "$binary" ]; then
   exit 1
 fi
 
-rm -rf "$out_dir"
 mkdir -p "$out_dir"
-abs_out_dir=$(CDPATH= cd -- "$out_dir" && pwd)
-work_dir=$(mktemp -d /tmp/git-labeler-pkg.XXXXXX)
+abs_out_dir=$(CDPATH= cd -- "$out_dir" && pwd -P)
+artifact_name="git-labeler-${version}-darwin-arm64.pkg"
+if [ -n "$pkg_sign_identity" ]; then
+  artifact_name="git-labeler-${version}-darwin-arm64-signed.pkg"
+fi
+
+check_publication_targets() {
+  for name in "$artifact_name" SHA256SUMS BUILD-METADATA.txt; do
+    target="$abs_out_dir/$name"
+    if [ -L "$target" ] || { [ -e "$target" ] && [ ! -f "$target" ]; }; then
+      echo "Refusing to replace non-regular artifact: $target" >&2
+      exit 1
+    fi
+  done
+}
+
+check_publication_targets
+work_dir=$(mktemp -d "$abs_out_dir/.git-labeler-pkg.XXXXXX")
 payload_dir="$work_dir/payload"
 component_pkg="$work_dir/git-labeler-component.pkg"
-unsigned_pkg="$abs_out_dir/git-labeler-${version}-darwin-arm64.pkg"
-signed_pkg="$abs_out_dir/git-labeler-${version}-darwin-arm64-signed.pkg"
-metadata_file="$abs_out_dir/BUILD-METADATA.txt"
+staged_out_dir="$work_dir/artifacts"
+final_pkg="$staged_out_dir/$artifact_name"
+metadata_file="$staged_out_dir/BUILD-METADATA.txt"
 
 cleanup() {
-  rm -rf "$work_dir"
+  rm -rf -- "$work_dir"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 mkdir -p \
+  "$staged_out_dir" \
   "$payload_dir$prefix/bin" \
   "$payload_dir$prefix/share/git-labeler/scripts" \
   "$payload_dir$prefix/share/git-labeler/launchd" \
@@ -169,13 +218,11 @@ if [ -n "$pkg_sign_identity" ]; then
   productbuild \
     --package "$component_pkg" \
     --sign "$pkg_sign_identity" \
-    "$signed_pkg"
-  final_pkg="$signed_pkg"
+    "$final_pkg"
 else
   productbuild \
     --package "$component_pkg" \
-    "$unsigned_pkg"
-  final_pkg="$unsigned_pkg"
+    "$final_pkg"
   echo "Built unsigned package; pass --pkg-sign-identity or set PKG_SIGN_IDENTITY for distribution builds." >&2
 fi
 
@@ -189,10 +236,18 @@ source_commit=$(git rev-parse HEAD 2>/dev/null || echo unknown)
 EOF_METADATA
 
 (
-  cd "$abs_out_dir"
+  cd "$staged_out_dir"
   shasum -a 256 "$(basename -- "$final_pkg")" > SHA256SUMS
 )
 
 pkgutil --check-signature "$final_pkg" || true
+
+# Generate everything before replacing only this invocation's named files.
+check_publication_targets
+for name in "$artifact_name" SHA256SUMS BUILD-METADATA.txt; do
+  mv -f -h "$staged_out_dir/$name" "$abs_out_dir/$name"
+done
+final_pkg="$abs_out_dir/$artifact_name"
+metadata_file="$abs_out_dir/BUILD-METADATA.txt"
 ls -l "$final_pkg" "$metadata_file" "$abs_out_dir/SHA256SUMS"
 echo "Built $final_pkg"

@@ -4,10 +4,12 @@ public final class GitLabelerDaemon {
     private let config: GitLabelerConfig
     private let roots: [URL]
     private let scanner: RepoScanner
+    private let scanQueue = DispatchQueue(label: "st.rio.git-labeler.scan")
     private var watcher: EventWatcher?
     private var rescanTimer: DispatchSourceTimer?
 
     public init(config: GitLabelerConfig) throws {
+        try config.validate()
         self.config = config
         self.roots = config.roots.map {
             URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
@@ -15,16 +17,14 @@ public final class GitLabelerDaemon {
         self.scanner = try RepoScanner(config: config)
     }
 
-    public func run() {
+    public func run() throws {
         guard !roots.isEmpty else {
             Self.log("no roots configured; run `git-labeler config add PATH` and restart the service")
             dispatchMain()
         }
 
         Self.log("starting with \(roots.count) root(s)")
-        scanAll()
-
-        let debouncer = RepositoryDebouncer(milliseconds: config.debounceMilliseconds) { [scanner] url in
+        let debouncer = RepositoryDebouncer(milliseconds: config.debounceMilliseconds, queue: scanQueue) { [scanner] url in
             let result = scanner.scanRepositoryCandidate(url)
             GitLabelerDaemon.log(result)
         }
@@ -32,10 +32,14 @@ public final class GitLabelerDaemon {
         let watcher = EventWatcher(roots: roots) { url in
             debouncer.schedule(url)
         }
-        watcher.start()
+        try watcher.start()
         self.watcher = watcher
 
-        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "st.rio.git-labeler.rescan"))
+        scanQueue.async { [self] in
+            scanAll()
+        }
+
+        let timer = DispatchSource.makeTimerSource(queue: scanQueue)
         timer.schedule(deadline: .now() + .seconds(config.rescanIntervalSeconds), repeating: .seconds(config.rescanIntervalSeconds))
         timer.setEventHandler { [weak self] in
             self?.scanAll()

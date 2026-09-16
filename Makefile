@@ -1,4 +1,4 @@
-VERSION ?= 0.2.0
+VERSION ?= 0.2.1
 NOTARY_PROFILE ?= git-labeler-notary
 MACOS_SIGNED_PKG ?= target/package/macos/git-labeler-$(VERSION)-darwin-arm64-signed.pkg
 MACOS_FINAL_PKG ?= target/package/macos/git-labeler-$(VERSION)-darwin-arm64.pkg
@@ -18,6 +18,8 @@ check:
 	sh -n scripts/status-launchagent.sh
 	sh -n packaging/macos/build-pkg.sh
 	sh -n packaging/macos/notarize-pkg.sh
+	sh Tests/CLITests.sh "$(CURDIR)/.build/debug/git-labeler"
+	sh Tests/PackagingTests.sh
 
 package-macos:
 	packaging/macos/build-pkg.sh --version "$(VERSION)"
